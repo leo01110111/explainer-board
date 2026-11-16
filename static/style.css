@@ -1,0 +1,85 @@
+:root {
+  --bg: #1c1c28;
+  --bar: #15151f;
+  --fg: #ececf0;
+  --muted: #8a8a9a;
+  --accent: #5cd0b3;
+  --text-font: "Inter", "Noto Sans", "Helvetica Neue", Arial, sans-serif;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); overflow: hidden; }
+body { font-family: var(--text-font); }
+
+#viewport { position: absolute; left: 0; top: 0; right: 0; bottom: 74px; overflow: hidden; }
+#stage { position: absolute; width: 1600px; height: 900px; transform-origin: 0 0; background: var(--bg); }
+#board { position: absolute; inset: 0; }
+
+#title {
+  position: absolute; left: 50px; right: 50px; top: 26px; height: 74px;
+  display: flex; align-items: center; justify-content: center;
+  font-family: KaTeX_Main, "Times New Roman", serif; font-size: 44px; color: var(--fg); white-space: nowrap;
+}
+#title .t { position: absolute; transform-origin: 50% 50%; }
+
+.obj { position: absolute; left: 0; top: 0; transform-origin: 0 0; white-space: nowrap; color: var(--fg); will-change: transform, opacity; }
+.obj .inner { position: relative; transform-origin: 50% 50%; display: inline-block; }
+.obj .content { display: inline-flex; align-items: center; }
+.obj .content.old { position: absolute; left: 0; top: 0; }
+.obj.text { font-size: 34px; line-height: 1.25; }
+.obj.math { font-size: 34px; }
+.obj.math .katex-display { margin: 0; }
+.obj.math .katex-display > .katex { text-align: left; }
+.obj .label { font-family: var(--text-font); font-size: 22px; color: var(--muted); margin-left: 30px; }
+.obj .label .katex { font-size: 1.05em; }
+.obj .box, .obj .outline {
+  position: absolute; left: -18px; right: -18px; top: -12px; bottom: -12px;
+  border: 3px solid currentColor; border-radius: 4px; pointer-events: none;
+}
+.obj .outline { border-width: 3px; }
+
+.obj.table { font-size: 28px; }
+table.tbl { border-collapse: collapse; }
+table.tbl td, table.tbl th { padding: 8px 26px; text-align: center; font-weight: normal; }
+table.tbl tr.head th { border-bottom: 2px solid #8a8a9a; color: #d8d8e0; }
+table.tbl td + td, table.tbl th + th { border-left: 1px solid #44445a; }
+
+.plot { position: absolute; left: 0; top: 0; will-change: transform, opacity; }
+.plot svg { position: absolute; left: 0; top: 0; overflow: visible; }
+.plot .ovl { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.plot .lab { position: absolute; white-space: nowrap; font-size: 26px; transform: translate(-50%, -50%); }
+.plot .lab.txt { font-family: var(--text-font); font-size: 24px; }
+.plot .axlab { position: absolute; white-space: nowrap; font-size: 26px; color: #d8d8e0; }
+.plot .axlab.txt { font-family: var(--text-font); font-size: 22px; }
+
+#bar { position: absolute; left: 0; right: 0; bottom: 0; height: 74px; background: var(--bar); border-top: 1px solid #2a2a3a; user-select: none; }
+#scrub { position: absolute; left: 0; right: 0; top: 0; height: 8px; display: flex; gap: 2px; padding: 0 2px; }
+#scrub .seg { flex: 1 1 0; background: #2c2c3c; cursor: pointer; position: relative; overflow: hidden; }
+#scrub .seg:hover { background: #3c3c50; }
+#scrub .seg.done { background: #3a5a55; }
+#scrub .seg.cur { background: #34344a; }
+#scrub .seg .fill { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); }
+#barrow { position: absolute; left: 0; right: 0; top: 8px; bottom: 0; display: flex; align-items: center; padding: 0 22px; gap: 24px; }
+#scene-title { flex: 0 0 22%; font-size: 15px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#caption { flex: 1 1 auto; font-size: 19px; color: #e4e4ea; text-align: center; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.3; }
+#caption.off { visibility: hidden; }
+#beatno { flex: 0 0 auto; min-width: 110px; text-align: right; font-size: 15px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+#overlay { position: absolute; left: 0; right: 0; top: 0; bottom: 74px; display: flex; align-items: flex-end; justify-content: center; padding-bottom: 40px; pointer-events: none; }
+#overlay.hidden, #start.hidden { display: none; }
+#ov-box { background: rgba(14, 14, 22, 0.94); border: 1px solid #3a3a50; border-radius: 10px; padding: 18px 28px; min-width: 520px; max-width: 1000px; box-shadow: 0 10px 40px rgba(0,0,0,0.5); }
+#ov-head { font-size: 20px; display: flex; align-items: center; gap: 12px; }
+#ov-head .dot { width: 14px; height: 14px; border-radius: 50%; background: #fc6255; animation: blink 1s infinite; }
+#ov-head .spin { width: 16px; height: 16px; border-radius: 50%; border: 3px solid #5cd0b3; border-top-color: transparent; animation: spin 0.9s linear infinite; }
+#ov-body { font-size: 18px; color: #d8d8e0; margin-top: 10px; line-height: 1.4; }
+#ov-body:empty { display: none; }
+#ov-foot { font-size: 14px; color: var(--muted); margin-top: 10px; }
+@keyframes blink { 50% { opacity: 0.25; } }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+#start { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; background: rgba(20, 20, 30, 0.72); cursor: pointer; }
+.start-box { text-align: center; }
+.start-play { font-size: 64px; color: var(--accent); }
+.start-msg { font-size: 26px; margin-top: 8px; }
+.start-keys { font-size: 16px; color: var(--muted); margin-top: 18px; }
+.start-keys b { color: #d8d8e0; font-weight: 600; }
+#bar.writing #beatno::before { content: 'writing… '; color: #5cd0b3; opacity: 0.8; animation: blink 1.6s infinite; }

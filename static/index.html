@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Board</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.css">
+<script src="https://cdn.jsdelivr.net/npm/katex@0.16.11/dist/katex.min.js"></script>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="viewport">
+  <div id="stage">
+    <div id="title"></div>
+    <div id="board"></div>
+  </div>
+</div>
+<div id="bar">
+  <div id="scrub"></div>
+  <div id="barrow">
+    <div id="scene-title"></div>
+    <div id="caption"></div>
+    <div id="beatno"></div>
+  </div>
+</div>
+<div id="overlay" class="hidden"><div id="ov-box"><div id="ov-head"></div><div id="ov-body"></div><div id="ov-foot"></div></div></div>
+<div id="start" class="hidden">
+  <div class="start-box">
+    <div class="start-play">&#9654;</div>
+    <div class="start-msg">Click or press Enter to start</div>
+    <div class="start-keys"><b>Ctrl+Space</b> ask a question &nbsp;·&nbsp; <b>Esc</b> cancel &nbsp;·&nbsp; <b>&larr; &rarr;</b> beat &nbsp;·&nbsp; <b>Space</b> pause &nbsp;·&nbsp; <b>C</b> captions</div>
+  </div>
+</div>
+<script src="/static/engine.js"></script>
+</body>
+</html>

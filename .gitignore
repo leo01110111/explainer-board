@@ -1,0 +1,7 @@
+projects/
+dataset/
+.cache/
+*.log
+*.pid
+__pycache__/
+*.pyc
