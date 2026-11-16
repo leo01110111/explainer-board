@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 cd "$(dirname "$0")"
-PY="$HOME/miniconda3/envs/explain-video/bin/python"
+. tools/python.sh
 PORT=8765
 BROWSER=1
 ARGS=()

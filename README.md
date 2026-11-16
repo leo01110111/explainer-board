@@ -12,7 +12,7 @@ bash run.sh --project gd-averaging              # http://127.0.0.1:8765, opens C
 bash run.sh --project distance-concentration/v2 --port 8768 --no-browser
 ```
 
-Python env: `~/miniconda3/envs/explain-video` (kokoro, faster-whisper, numpy, soundfile; ffmpeg on PATH).
+Install: `sudo apt-get install -y ffmpeg && bash setup.sh --prefetch` (Python 3.10-3.12; see [AGENTS.md](AGENTS.md)).
 Keys: Space pause/resume, ←/→ previous/next beat, C captions, Ctrl+Space ask a question, Esc cancel.
 
 ## Layout

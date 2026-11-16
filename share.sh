@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Share your board questions to the public Hugging Face dataset (see tools/share.py).
 cd "$(dirname "$0")"
-PY="$HOME/miniconda3/envs/explain-video/bin/python"
-[ -x "$PY" ] || PY=python3
+. tools/python.sh
 if ! "$PY" -c "import huggingface_hub" 2>/dev/null; then
   echo "Installing huggingface_hub..."; "$PY" -m pip install -q huggingface_hub || exit 1
 fi

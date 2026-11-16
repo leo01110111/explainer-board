@@ -1,0 +1,8 @@
+# Python 3.10-3.12 (kokoro does not support 3.13 yet). Versions below are the ones the board was built and tested with.
+kokoro==0.9.4
+misaki[en]==0.9.4
+faster-whisper==1.2.1
+torch>=2.3
+numpy>=1.26
+soundfile>=0.12
+huggingface_hub>=0.25

@@ -7,7 +7,7 @@ appearing within seconds of being written.
 ## Files
 ```
 explainer-board/     repo root (the tool)
-  server.py          stdlib ThreadingHTTPServer; run with ~/miniconda3/envs/explain-video/bin/python
+  server.py          stdlib ThreadingHTTPServer; Python env from setup.sh (.venv) or $BOARD_PYTHON
                      flags: --project NAME|PATH (a video folder with scenes/order.json; names resolve under projects/),
                      or --scenes DIR --queue DIR; --port N (default 8765)
   run.sh             starts server.py if the port is free; passes args through; pid/log: server.pid/server.log

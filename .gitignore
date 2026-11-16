@@ -5,3 +5,4 @@ dataset/
 *.pid
 __pycache__/
 *.pyc
+.venv/
