@@ -33,7 +33,9 @@ tail server.log                                                  # "kokoro loade
 - `projects/` is **gitignored**: each user's explainers. A video is any folder with `scenes/order.json` and `queue/`:
   `projects/<project>/<video>/` or `projects/<project>/` for a single video. Keep a project's generator and
   experiment scripts inside the project with paths relative to the script, never absolute.
-- Raw data, written by the server, never edit or delete:
+- Raw data, written by the server only if the viewer chose "Record" on the start screen (`consent.json`,
+  gitignored; with no choice or "Don't record", nothing below is written and questions are marked `"consent": false`,
+  which the exporter and `share.sh` skip). Never edit or delete it, and never change `consent.json` for the viewer:
   - `<video>/sessions/<id>/events.jsonl`: one file per viewing session, an append-only log of what was shown
     (each beat, with the history-repo commit it came from) and what the viewer did (pause, step, seek, questions).
   - `<video>/sessions/<id>/q_*.webm`: the original audio of every spoken question, rejected ones included.

@@ -163,6 +163,23 @@ class Prewarm:
 
 prewarm_q = Prewarm()
 
+CONSENT = os.path.join(ROOT, "consent.json")
+
+
+def recording_allowed():
+    try:
+        return json.load(open(CONSENT)).get("record") is True
+    except Exception:
+        return False
+
+
+def set_consent(record):
+    tmp = CONSENT + ".tmp"
+    json.dump({"record": bool(record), "decided": datetime.now().isoformat(timespec="seconds")}, open(tmp, "w"))
+    os.replace(tmp, CONSENT)
+    log("data recording consent:", "on" if record else "off")
+
+
 hist_lock = threading.Lock()
 HIST_EXCLUDE = ["sessions/", "__pycache__/", "*.mp4", "*.wav", "*.webm", "*.tmp"]
 
@@ -210,6 +227,9 @@ def agent_log_worker():
     extra = os.path.join(HIST, "agent_paths.txt")
     while True:
         try:
+            if not recording_allowed():
+                time.sleep(60)
+                continue
             paths = [ROOT] + ([l.strip() for l in open(extra) if l.strip()] if os.path.exists(extra) else [])
             n = collect(paths, quiet=True)
             if n:
@@ -346,7 +366,8 @@ def parse_multipart(ctype, body):
 
 
 def handle_feedback(audio_bytes, meta, ext="webm"):
-    sid = safe_sid(meta.get("session"))
+    consent = recording_allowed()
+    sid = safe_sid(meta.get("session")) if consent else None
     audio_path = None
     if sid:
         d = os.path.join(SESSIONS, sid)
@@ -380,7 +401,7 @@ def handle_feedback(audio_bytes, meta, ext="webm"):
         fid = next_fb_id()
         rec = {"id": fid, "scene": scene_id, "beat": beat, "time": meta.get("time"), "beat_text": beat_text,
                "scene_beats": beats, "transcript": text, "created": datetime.now().isoformat(timespec="seconds"),
-               "session": sid, "audio": rel_audio, "version": meta.get("version")}
+               "session": sid, "audio": rel_audio, "version": meta.get("version"), "consent": consent}
         tmp = os.path.join(QUEUE, fid + ".json.tmp")
         json.dump(rec, open(tmp, "w"), indent=1)
         os.replace(tmp, os.path.join(QUEUE, fid + ".json"))
@@ -434,6 +455,11 @@ class Handler(BaseHTTPRequestHandler):
                 if not f.startswith(STATIC + os.sep) or not os.path.isfile(f):
                     return self.send(404, {"error": "not found"})
                 return self.serve_file(f)
+            if p == "/api/consent":
+                try:
+                    return self.send(200, json.load(open(CONSENT)))
+                except Exception:
+                    return self.send(200, {"record": None})
             if p == "/api/scenes":
                 ver = snapshot()
                 return self.send(200, load_scenes(), extra={"X-Board-Version": ver or ""})
@@ -479,8 +505,14 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             u = urlparse(self.path)
+            if u.path == "/api/consent":
+                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
+                set_consent(d.get("record") is True)
+                return self.send(200, json.load(open(CONSENT)))
             if u.path == "/api/events":
                 d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
+                if not recording_allowed():
+                    return self.send(200, {"ok": True, "recorded": False})
                 sid = safe_sid(d.get("session"))
                 if not sid:
                     return self.send(400, {"error": "no session"})

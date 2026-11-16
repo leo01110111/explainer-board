@@ -80,6 +80,13 @@ table.tbl td + td, table.tbl th + th { border-left: 1px solid #44445a; }
 .start-box { text-align: center; }
 .start-play { font-size: 64px; color: var(--accent); }
 .start-msg { font-size: 26px; margin-top: 8px; }
+#consent { margin: 22px auto 0; max-width: 620px; cursor: default; }
+.c-q { font-size: 18px; }
+.c-what { font-size: 14px; color: var(--muted); margin-top: 6px; line-height: 1.45; }
+.c-btns { margin-top: 12px; display: flex; gap: 10px; justify-content: center; }
+.c-btns button { font: inherit; font-size: 15px; padding: 6px 16px; border-radius: 6px; cursor: pointer;
+  background: transparent; color: #d8d8e0; border: 1px solid #55556a; }
+.c-btns button.on { border-color: var(--accent); color: var(--accent); }
 .start-keys { font-size: 16px; color: var(--muted); margin-top: 18px; }
 .start-keys b { color: #d8d8e0; font-weight: 600; }
 #bar.writing #beatno::before { content: 'writing… '; color: #5cd0b3; opacity: 0.8; animation: blink 1.6s infinite; }

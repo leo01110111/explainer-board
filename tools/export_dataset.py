@@ -39,7 +39,15 @@ def ts(s):
 def fb_files(q):
     if not os.path.isdir(q):
         return []
-    return sorted((f for f in os.listdir(q) if re.fullmatch(r"fb_\d+\.json", f)), key=lambda f: int(f[3:-5]))
+    fs = [f for f in os.listdir(q) if re.fullmatch(r"fb_\d+\.json", f) and consented(os.path.join(q, f))]
+    return sorted(fs, key=lambda f: int(f[3:-5]))
+
+
+def consented(path):
+    try:
+        return json.load(open(path)).get("consent", True) is not False
+    except Exception:
+        return True
 
 
 def board_records():

@@ -22,6 +22,13 @@ Keys: Space pause/resume, ←/→ previous/next beat, C captions, Ctrl+Space ask
 - `projects/` (gitignored): your explainers. A video is any folder with `scenes/order.json` and `queue/`;
   `--project` takes a path or a name under `projects/`.
 
+## Your data
+
+The start screen asks whether to record the session. If you choose **Record**, the board saves on your computer what
+played, your pauses and skips, and the audio of your spoken questions. With **Don't record**, none of that is kept
+(questions are still transcribed so they can be answered). You can change the choice on the start screen any time.
+Nothing leaves your computer unless you run `share.sh`, which shows what will be uploaded and asks first.
+
 ## Share your questions
 
 Every question you ask is a training example (question + scene on screen + answer scene). Share them with the

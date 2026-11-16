@@ -62,3 +62,5 @@ Scene JSON follows the board's scene format (title, layout, beats of `say` + ani
 
 Contributions land in `data/<your-username>/`. Everything here is public: question transcripts and scenes
 are shared, audio is not. Don't ask questions that contain anything you wouldn't post publicly.
+Every record was shared by the person who asked it, who reviewed the list and confirmed the upload. Questions
+asked with recording turned off on the board's start screen are never exported.

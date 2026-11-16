@@ -1182,10 +1182,12 @@ const params = new URLSearchParams(location.search);
 const SESSION = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '') + '_' + Math.random().toString(36).slice(2, 8);
 const EVQ = [];
 const LOGGING = params.get('log') !== '0';
+let CONSENT = null;
 function ev(e, data) {
-  if (LOGGING) EVQ.push({ e, t: Date.now(), pt: +performance.now().toFixed(1), ...data });
+  if (LOGGING && CONSENT !== false) EVQ.push({ e, t: Date.now(), pt: +performance.now().toFixed(1), ...data });
 }
 function flushEvents(beacon) {
+  if (CONSENT !== true) { if (CONSENT === false) EVQ.length = 0; return; }
   if (!EVQ.length) return;
   const body = JSON.stringify({ session: SESSION, events: EVQ.splice(0) });
   if (beacon && navigator.sendBeacon) navigator.sendBeacon('/api/events', new Blob([body], { type: 'application/json' }));
@@ -1610,7 +1612,25 @@ function frame() {
 
 let started = false;
 function showStart() { $('start').classList.remove('hidden'); }
+function showConsent() {
+  for (const b of document.querySelectorAll('#consent button')) b.classList.toggle('on', CONSENT === (b.dataset.v === '1'));
+  $('start').querySelector('.start-msg').textContent = CONSENT === null ? 'Choose an option to start' : 'Click or press Enter to start';
+}
+async function loadConsent() {
+  try { CONSENT = (await (await fetch('/api/consent', { cache: 'no-store' })).json()).record; } catch (e) {}
+  if (CONSENT !== true && CONSENT !== false) CONSENT = null;
+  showConsent();
+}
+async function setConsent(v) {
+  const first = CONSENT === null;
+  try { await fetch('/api/consent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ record: v }) }); } catch (e) {}
+  CONSENT = v;
+  if (v) ev('consent', { record: true });
+  showConsent();
+  if (first) beginPlayback();
+}
 function beginPlayback() {
+  if (CONSENT === null && LOGGING && !$('start').classList.contains('hidden')) return;
   $('start').classList.add('hidden');
   if (started) { player.audioEl.play().catch(() => {}); return; }
   started = true;
@@ -1635,6 +1655,11 @@ async function main() {
   window.addEventListener('resize', fit);
   document.addEventListener('keydown', onKey);
   $('start').addEventListener('click', beginPlayback);
+  $('consent').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (e.target.dataset && e.target.dataset.v) setConsent(e.target.dataset.v === '1');
+  });
+  await loadConsent();
   await preloadFonts();
   await loadScenes();
   const list = sceneList();
