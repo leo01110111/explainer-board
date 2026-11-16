@@ -33,8 +33,17 @@ tail server.log                                                  # "kokoro loade
 - `projects/` is **gitignored**: each user's explainers. A video is any folder with `scenes/order.json` and `queue/`:
   `projects/<project>/<video>/` or `projects/<project>/` for a single video. Keep a project's generator and
   experiment scripts inside the project with paths relative to the script, never absolute.
+- Raw data, written by the server, never edit or delete:
+  - `<video>/sessions/<id>/events.jsonl`: one file per viewing session, an append-only log of what was shown
+    (each beat, with the history-repo commit it came from) and what the viewer did (pause, step, seek, questions).
+  - `<video>/sessions/<id>/q_*.webm`: the original audio of every spoken question, rejected ones included.
+  - `projects/<project>/.git`: a history repo the server auto-commits every 2 s and before serving any scene, so
+    every version a viewer saw is a commit. Do not rewrite its history.
+  - `agent_logs/{claude,codex,cursor}/`: raw session logs of any agent whose log mentions this repo (or a path
+    listed in `projects/<project>/agent_paths.txt`), copied by the server every 5 min, so they outlive each
+    tool's own cleanup. Run `python3 tools/collect_agent_logs.py` to copy now.
 - `.cache/audio/` is the shared TTS cache, keyed by sentence text. Never delete it casually: re-synthesis is slow.
-- Do not commit anything under `projects/`, `dataset/`, `.cache/`, or `.venv/`.
+- Do not commit anything under `projects/`, `dataset/`, `agent_logs/`, `.cache/`, or `.venv/`.
 
 New video: create `projects/<name>/scenes/order.json` (`{"order": []}`), add scene files, then
 `bash run.sh --project <name>`. Check a beat visually with `PORT=8765 OUT_DIR=/tmp bash tools/shot.sh <scene_id> <beat>`.

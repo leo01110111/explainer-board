@@ -1178,6 +1178,26 @@ const estDur = (text) => Math.max(1.5, (text || '').split(/\s+/).length / 2.5);
 
 // ---------- player ----------
 const params = new URLSearchParams(location.search);
+
+const SESSION = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*/, '') + '_' + Math.random().toString(36).slice(2, 8);
+const EVQ = [];
+const LOGGING = params.get('log') !== '0';
+function ev(e, data) {
+  if (LOGGING) EVQ.push({ e, t: Date.now(), pt: +performance.now().toFixed(1), ...data });
+}
+function flushEvents(beacon) {
+  if (!EVQ.length) return;
+  const body = JSON.stringify({ session: SESSION, events: EVQ.splice(0) });
+  if (beacon && navigator.sendBeacon) navigator.sendBeacon('/api/events', new Blob([body], { type: 'application/json' }));
+  else fetch('/api/events', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body, keepalive: true }).catch(() => {});
+}
+if (LOGGING) {
+  setInterval(() => flushEvents(false), 2000);
+  window.addEventListener('pagehide', () => { ev('session_end'); flushEvents(true); });
+  document.addEventListener('visibilitychange', () => ev('visibility', { state: document.visibilityState }));
+  window.addEventListener('error', (e) => ev('error', { msg: e.message }));
+}
+
 const player = {
   data: { order: [], scenes: {} }, sceneId: null, scene: null, bi: 0, gen: 0,
   state: 'idle', autoplay: params.get('autoplay') !== '0', paused: false,
@@ -1188,6 +1208,11 @@ async function loadScenes() {
   try {
     const r = await fetch('/api/scenes', { cache: 'no-store' });
     player.data = await r.json();
+    const ver = r.headers.get('X-Board-Version');
+    if (ver !== player.dataVersion) {
+      player.dataVersion = ver;
+      ev('scenes', { version: ver, order: player.data.order });
+    }
   } catch (e) { console.warn('scenes fetch failed', e); }
   drawScrubber();
 }
@@ -1202,6 +1227,7 @@ function loadSceneInstant(id, nBeats) {
   if (!sc) { console.warn('no scene', id); return false; }
   player.sceneId = id;
   player.scene = JSON.parse(JSON.stringify(sc));
+  player.sceneVersion = player.dataVersion;
   ordCounter = 0;
   resetBoard(player.scene);
   anim.instant = true;
@@ -1221,6 +1247,7 @@ function showStatic(id, k) {
   if (!loadSceneInstant(id, k + 1)) return;
   player.bi = k;
   player.state = 'static';
+  ev('show_static', { scene: id, beat: k, version: player.sceneVersion });
   updateBar();
 }
 
@@ -1261,13 +1288,14 @@ async function startBeat(k) {
   player.beatEnd = t0 + Math.max(beatDur, opsEnd + 0.2);
   player.beatStart = t0;
   player.state = 'playing';
+  ev('beat', { scene: player.sceneId, beat: k, version: player.sceneVersion, say: beat.say, dur: +beatDur.toFixed(2), audio: !!au });
   PLAYLOG.push(player.sceneId + ':' + k);
   document.body.dataset.playLog = PLAYLOG.join(',');
   document.body.dataset.errorLog = ERRORS.join(' | ');
   if (au) {
     player.audioEl.src = au.url;
     player.audioEl.currentTime = 0;
-    player.audioEl.play().catch((e) => { console.warn('audio play blocked', e); showStart(); });
+    player.audioEl.play().catch((e) => { console.warn('audio play blocked', e); ev('audio_blocked'); showStart(); });
   }
 }
 
@@ -1279,15 +1307,20 @@ function waitForBeats(k) {
   updateBar();
   const poll = async () => {
     if (gen !== player.gen) return;
-    let sc = null;
+    let sc = null, ver = null;
     try {
       const r = await fetch('/api/scene/' + encodeURIComponent(id), { cache: 'no-store' });
-      if (r.ok) sc = await r.json();
+      if (r.ok) { sc = await r.json(); ver = r.headers.get('X-Board-Version'); }
     } catch (e) {}
     if (gen !== player.gen) return;
     if (sc && Array.isArray(sc.beats)) {
       const cur = player.scene.beats || (player.scene.beats = []);
-      for (const b of sc.beats.slice(cur.length)) { cur.push(JSON.parse(JSON.stringify(b))); getAudio(b.say); }
+      const added = sc.beats.slice(cur.length);
+      for (const b of added) { cur.push(JSON.parse(JSON.stringify(b))); getAudio(b.say); }
+      if (added.length || ver !== player.sceneVersion) {
+        player.sceneVersion = ver;
+        ev('scene_grew', { scene: id, version: ver, beats: cur.length, complete: sc.complete !== false });
+      }
       player.scene.complete = sc.complete;
       if (sc.title) player.scene.title = sc.title;
       player.data.scenes[id] = sc;
@@ -1315,12 +1348,14 @@ function nextScene() {
   const i = list.indexOf(player.sceneId);
   if (i >= 0 && i + 1 < list.length) return playFrom(list[i + 1], 0);
   player.state = 'ended';
+  ev('ended', { scene: player.sceneId });
   updateBar();
 }
 
 function pause() {
   if (player.paused) return;
   player.paused = true;
+  ev('pause', { scene: player.sceneId, beat: player.bi });
   clock.stop();
   stopAudio();
   updateBar();
@@ -1328,6 +1363,7 @@ function pause() {
 function resume() {
   if (!player.paused) return;
   player.paused = false;
+  ev('resume', { scene: player.sceneId, beat: player.bi });
   clock.start();
   if (player.state === 'playing' && player.audioEl.src && player.audioEl.currentTime < player.audioEl.duration)
     player.audioEl.play().catch(() => {});
@@ -1347,6 +1383,7 @@ function step(dir) {
     if (i < 0 || i + 1 >= list.length) k = n - 1;
     else { id = list[i + 1]; k = 0; }
   }
+  ev('step', { dir, from_scene: player.sceneId, from_beat: player.bi, scene: id, beat: k });
   if (!player.autoplay || player.paused || player.state === 'static' || player.state === 'ended') showStatic(id, k);
   else playFrom(id, k);
 }
@@ -1367,7 +1404,7 @@ function drawScrubber() {
       const n = (s.beats || []).length || 1;
       f.style.width = `${((player.bi + 1) / n) * 100}%`;
     }
-    seg.onclick = () => (player.autoplay && !player.paused ? playFrom(id, 0) : showStatic(id, 0));
+    seg.onclick = () => (ev('seek', { from_scene: player.sceneId, from_beat: player.bi, scene: id, beat: 0 }), player.autoplay && !player.paused ? playFrom(id, 0) : showStatic(id, 0));
   });
 }
 
@@ -1434,7 +1471,9 @@ async function startRecording() {
   fb.rec.start(250);
   fb.mode = 'recording';
   fb.t0 = performance.now();
-  fb.meta = { scene: player.sceneId, beat: player.bi, time: +(clock.now() - (player.beatStart || clock.now())).toFixed(2) };
+  fb.meta = { scene: player.sceneId, beat: player.bi, time: +(clock.now() - (player.beatStart || clock.now())).toFixed(2),
+    session: SESSION, version: player.sceneVersion };
+  ev('question_start', fb.meta);
   const tick = () => overlay('<span class="dot"></span>Recording ' + mmss((performance.now() - fb.t0) / 1000), '', 'Ctrl+Space to send · Esc to cancel');
   tick();
   fb.timer = setInterval(tick, 250);
@@ -1447,6 +1486,7 @@ function stopStream() {
 }
 
 function cancelFeedback() {
+  ev('question_cancel', { stage: fb.mode });
   if (fb.rec && fb.rec.state !== 'inactive') { fb.rec.onstop = null; fb.rec.stop(); }
   stopStream();
   clearInterval(fb.poll);
@@ -1458,6 +1498,7 @@ function cancelFeedback() {
 
 function sendRecording() {
   fb.mode = 'uploading';
+  ev('question_end', { secs: +((performance.now() - fb.t0) / 1000).toFixed(2) });
   clearInterval(fb.timer);
   const rec = fb.rec;
   rec.onstop = async () => {
@@ -1471,6 +1512,7 @@ function sendRecording() {
     try {
       res = await (await fetch('/api/feedback', { method: 'POST', body: fd })).json();
     } catch (e) { res = { error: String(e) }; }
+    ev('question_result', { fb: res.id || null, transcript: res.transcript || null, rejected: !!res.rejected, error: res.error || null });
     if (fb.mode !== 'uploading') return;
     if (res.error || res.rejected || !res.id) {
       overlay(res.rejected ? 'Didn’t catch a question' : 'Upload failed', res.transcript || res.error || '', 'resuming…');
@@ -1504,6 +1546,7 @@ function waitAnswer(id, transcript) {
     player.paused = false;
     clock.start();
     const target = d.scene && player.data.scenes[d.scene] ? d.scene : player.sceneId;
+    ev('answer', { fb: id, scene: target, note: d.note || null, wait_s: +((performance.now() - t0) / 1000).toFixed(1), version: player.dataVersion });
     playFrom(target, 0);
   }, 250);
 }
@@ -1535,12 +1578,12 @@ function onKey(e) {
   if (fb.mode) return;
   if (e.key === 'ArrowRight') { e.preventDefault(); step(1); }
   else if (e.key === 'ArrowLeft') { e.preventDefault(); step(-1); }
-  else if (e.key === 'c' || e.key === 'C') { player.captions = !player.captions; updateBar(); }
+  else if (e.key === 'c' || e.key === 'C') { player.captions = !player.captions; ev('captions', { on: player.captions }); updateBar(); }
   else if (e.key === 'p' || e.key === 'P') {
     if (player.state === 'static' && player.autoplay) { player.paused = false; clock.start(); playFrom(player.sceneId, player.bi); }
     else if (player.paused) resume(); else pause();
   } else if (e.key === 'Enter' && !started) beginPlayback();
-  else if (e.key === 'r' || e.key === 'R') { loadScenes().then(() => playFrom(player.sceneId, 0)); }
+  else if (e.key === 'r' || e.key === 'R') { ev('restart_scene', { scene: player.sceneId }); loadScenes().then(() => playFrom(player.sceneId, 0)); }
 }
 
 // ---------- main ----------
@@ -1571,6 +1614,7 @@ function beginPlayback() {
   $('start').classList.add('hidden');
   if (started) { player.audioEl.play().catch(() => {}); return; }
   started = true;
+  ev('start', { scene: player.sceneId, beat: player.bi });
   clock.start();
   playFrom(player.sceneId, player.bi);
 }
@@ -1584,6 +1628,7 @@ async function preloadFonts() {
 }
 
 async function main() {
+  ev('session_start', { url: location.href, ua: navigator.userAgent, viewport: [innerWidth, innerHeight] });
   board.root = $('board');
   board.titleEl = $('title');
   fit();

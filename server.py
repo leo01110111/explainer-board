@@ -23,7 +23,7 @@ import soundfile as sf
 ROOT = os.path.dirname(os.path.abspath(__file__))
 STATIC = os.path.join(ROOT, "static")
 PROJECTS = os.path.join(ROOT, "projects")
-SCENES = QUEUE = None
+SCENES = QUEUE = SESSIONS = HIST = None
 CACHE = os.path.join(ROOT, ".cache", "audio")
 BIN = os.path.dirname(sys.executable)
 FFMPEG = os.path.join(BIN, "ffmpeg") if os.path.exists(os.path.join(BIN, "ffmpeg")) else "ffmpeg"
@@ -99,6 +99,7 @@ class ASR:
     def __init__(self):
         self.lock = threading.Lock()
         self.model = None
+        self.name = None
 
     def load(self):
         with self.lock:
@@ -107,10 +108,12 @@ class ASR:
             from faster_whisper import WhisperModel
             try:
                 self.model = WhisperModel("medium.en", device="cuda", compute_type="int8_float16")
+                self.name = "faster-whisper medium.en cuda int8_float16"
                 log("whisper medium.en loaded on cuda")
             except Exception as e:
                 log("whisper cuda load failed, using small.en cpu:", e)
                 self.model = WhisperModel("small.en", device="cpu", compute_type="int8")
+                self.name = "faster-whisper small.en cpu int8"
 
     def transcribe(self, wav):
         self.load()
@@ -122,6 +125,7 @@ class ASR:
                 log("whisper failed, falling back to small.en cpu:", e)
                 from faster_whisper import WhisperModel
                 self.model = WhisperModel("small.en", device="cpu", compute_type="int8")
+                self.name = "faster-whisper small.en cpu int8"
                 segs, _ = self.model.transcribe(wav, language="en", beam_size=5)
                 return " ".join(s.text.strip() for s in segs).strip()
 
@@ -158,6 +162,83 @@ class Prewarm:
 
 
 prewarm_q = Prewarm()
+
+hist_lock = threading.Lock()
+HIST_EXCLUDE = ["sessions/", "__pycache__/", "*.mp4", "*.wav", "*.webm", "*.tmp"]
+
+
+def git(*args, cwd=None):
+    r = subprocess.run(["git", "-c", "user.name=board", "-c", "user.email=board@localhost", *args],
+                       cwd=cwd or HIST, capture_output=True, text=True)
+    return r.stdout.strip() if r.returncode == 0 else None
+
+
+def init_history():
+    if not os.path.isdir(os.path.join(HIST, ".git")):
+        git("init", "-q")
+        log("history repo created at", HIST)
+    ex = os.path.join(HIST, ".git", "info", "exclude")
+    os.makedirs(os.path.dirname(ex), exist_ok=True)
+    cur = open(ex).read().split("\n") if os.path.exists(ex) else []
+    with open(ex, "a") as f:
+        for pat in HIST_EXCLUDE:
+            if pat not in cur:
+                f.write(pat + "\n")
+    snapshot()
+
+
+def snapshot():
+    with hist_lock:
+        git("add", "-A")
+        if git("diff", "--cached", "--quiet") is None:
+            git("commit", "-q", "-m", "auto " + datetime.now().isoformat(timespec="seconds"))
+        return git("rev-parse", "HEAD")
+
+
+def history_worker():
+    while True:
+        try:
+            snapshot()
+        except Exception:
+            traceback.print_exc()
+        time.sleep(2)
+
+
+def agent_log_worker():
+    sys.path.insert(0, os.path.join(ROOT, "tools"))
+    from collect_agent_logs import collect
+    extra = os.path.join(HIST, "agent_paths.txt")
+    while True:
+        try:
+            paths = [ROOT] + ([l.strip() for l in open(extra) if l.strip()] if os.path.exists(extra) else [])
+            n = collect(paths, quiet=True)
+            if n:
+                log(f"agent logs: {n} file(s) copied")
+        except Exception:
+            traceback.print_exc()
+        time.sleep(300)
+
+
+def code_version():
+    head = git("rev-parse", "HEAD", cwd=ROOT)
+    dirty = git("status", "--porcelain", "--untracked-files=no", cwd=ROOT)
+    return (head or "unknown") + ("+dirty" if dirty else "")
+
+
+def safe_sid(sid):
+    return re.sub(r"[^A-Za-z0-9_\-]", "", str(sid or ""))[:64] or None
+
+
+ev_lock = threading.Lock()
+
+
+def append_events(sid, events):
+    d = os.path.join(SESSIONS, sid)
+    os.makedirs(d, exist_ok=True)
+    now = datetime.now().isoformat(timespec="milliseconds")
+    with ev_lock, open(os.path.join(d, "events.jsonl"), "a") as f:
+        for e in events:
+            f.write(json.dumps({"server_t": now, **e}) + "\n")
 
 
 def load_scenes():
@@ -264,7 +345,14 @@ def parse_multipart(ctype, body):
     return files, fields
 
 
-def handle_feedback(audio_bytes, meta):
+def handle_feedback(audio_bytes, meta, ext="webm"):
+    sid = safe_sid(meta.get("session"))
+    audio_path = None
+    if sid:
+        d = os.path.join(SESSIONS, sid)
+        os.makedirs(d, exist_ok=True)
+        audio_path = os.path.join(d, f"q_{datetime.now().strftime('%Y%m%dT%H%M%S%f')}.{ext}")
+        open(audio_path, "wb").write(audio_bytes)
     with tempfile.TemporaryDirectory() as td:
         src = os.path.join(td, "in.bin")
         wav = os.path.join(td, "in16k.wav")
@@ -276,7 +364,12 @@ def handle_feedback(audio_bytes, meta):
         t0 = time.time()
         text = asr.transcribe(wav)
         log(f"asr {time.time() - t0:.2f}s: {text!r}")
-    if len(re.findall(r"[A-Za-z0-9']+", text)) < 3:
+    rel_audio = os.path.relpath(audio_path, os.path.dirname(SESSIONS)) if audio_path else None
+    rejected = len(re.findall(r"[A-Za-z0-9']+", text)) < 3
+    if rejected:
+        if sid:
+            append_events(sid, [{"e": "question_received", "fb": None, "transcript": text, "rejected": True,
+                                 "audio": rel_audio, "asr": asr.name}])
         return 200, {"id": None, "transcript": text, "rejected": True}
     scene_id = meta.get("scene")
     beat = meta.get("beat")
@@ -286,11 +379,15 @@ def handle_feedback(audio_bytes, meta):
     with fb_lock:
         fid = next_fb_id()
         rec = {"id": fid, "scene": scene_id, "beat": beat, "time": meta.get("time"), "beat_text": beat_text,
-               "scene_beats": beats, "transcript": text, "created": datetime.now().isoformat(timespec="seconds")}
+               "scene_beats": beats, "transcript": text, "created": datetime.now().isoformat(timespec="seconds"),
+               "session": sid, "audio": rel_audio, "version": meta.get("version")}
         tmp = os.path.join(QUEUE, fid + ".json.tmp")
         json.dump(rec, open(tmp, "w"), indent=1)
         os.replace(tmp, os.path.join(QUEUE, fid + ".json"))
     log("feedback queued", fid)
+    if sid:
+        append_events(sid, [{"e": "question_received", "fb": fid, "transcript": text, "rejected": False,
+                             "audio": rel_audio, "asr": asr.name}])
     return 200, {"id": fid, "transcript": text}
 
 
@@ -338,16 +435,18 @@ class Handler(BaseHTTPRequestHandler):
                     return self.send(404, {"error": "not found"})
                 return self.serve_file(f)
             if p == "/api/scenes":
-                return self.send(200, load_scenes())
+                ver = snapshot()
+                return self.send(200, load_scenes(), extra={"X-Board-Version": ver or ""})
             m = re.fullmatch(r"/api/scene/([A-Za-z0-9_\-]+)", p)
             if m:
+                ver = snapshot()
                 try:
                     sc = load_scene(m.group(1))
                 except Exception as e:
                     return self.send(409, {"error": f"invalid JSON: {e}"})
                 if sc is None:
                     return self.send(404, {"error": "no scene"})
-                return self.send(200, sc)
+                return self.send(200, sc, extra={"X-Board-Version": ver or ""})
             if p == "/api/tts":
                 q = parse_qs(u.query)
                 text = q.get("text", [""])[0]
@@ -380,6 +479,19 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         try:
             u = urlparse(self.path)
+            if u.path == "/api/events":
+                d = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}")
+                sid = safe_sid(d.get("session"))
+                if not sid:
+                    return self.send(400, {"error": "no session"})
+                evs = d.get("events") or []
+                for e in evs:
+                    if e.get("e") == "session_start":
+                        e["server"] = {"code_version": code_version(), "video": os.path.relpath(os.path.dirname(SCENES), HIST),
+                                       "history_repo": HIST, "tts": {"model": "hexgrad/Kokoro-82M", "voice": VOICE, "speed": SPEED},
+                                       "asr": asr.name}
+                append_events(sid, evs)
+                return self.send(200, {"ok": True})
             if u.path != "/api/feedback":
                 return self.send(404, {"error": "not found"})
             n = int(self.headers.get("Content-Length", "0"))
@@ -395,15 +507,18 @@ class Handler(BaseHTTPRequestHandler):
                     if k in fields:
                         meta[k] = fields[k]
                 audio = files.get("audio") or next(iter(files.values()), b"")
+                m = re.search(r'filename="[^"]*\.([A-Za-z0-9]+)"', body[:4000].decode("latin-1"))
+                ext = m.group(1) if m else "webm"
             else:
                 audio = body
+                ext = "bin"
                 q = parse_qs(u.query)
                 meta = {k: v[0] for k, v in q.items()}
             if isinstance(meta.get("beat"), str) and meta["beat"].lstrip("-").isdigit():
                 meta["beat"] = int(meta["beat"])
             if not audio:
                 return self.send(400, {"error": "no audio"})
-            code, res = handle_feedback(audio, meta)
+            code, res = handle_feedback(audio, meta, ext)
             self.send(code, res)
         except Exception as e:
             traceback.print_exc()
@@ -411,7 +526,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main():
-    global SCENES, QUEUE, PORT
+    global SCENES, QUEUE, SESSIONS, HIST, PORT
     ap = argparse.ArgumentParser()
     ap.add_argument("--project", help="video folder: a path, or a name under projects/ (e.g. gd-averaging, distance-concentration/v2)")
     ap.add_argument("--scenes")
@@ -427,8 +542,15 @@ def main():
         sys.exit("pass --project NAME (a folder under projects/ with scenes/order.json) or --scenes DIR --queue DIR")
     a.queue = a.queue or os.path.join(os.path.dirname(os.path.abspath(a.scenes)), "queue")
     SCENES, QUEUE, PORT = os.path.abspath(a.scenes), os.path.abspath(a.queue), a.port
-    for d in (QUEUE, SCENES):
+    video = os.path.dirname(SCENES)
+    SESSIONS = os.path.join(video, "sessions")
+    rel = os.path.relpath(video, PROJECTS)
+    HIST = os.path.join(PROJECTS, rel.split(os.sep)[0]) if not rel.startswith("..") else video
+    for d in (QUEUE, SCENES, SESSIONS):
         os.makedirs(d, exist_ok=True)
+    init_history()
+    threading.Thread(target=history_worker, daemon=True).start()
+    threading.Thread(target=agent_log_worker, daemon=True).start()
     prewarm_q.push([ACK_TEXT], front=True)
     threading.Thread(target=tts.load, daemon=True).start()
     threading.Thread(target=asr.load, daemon=True).start()
